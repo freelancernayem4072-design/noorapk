@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">নূর লাইফ</string>
+    <string name="brand_english">NOOR LIFE</string>
+    <string name="tagline">আপনার সম্পূর্ণ ইসলামিক জীবনসঙ্গী</string>
+    <string name="admob_app_id">ca-app-pub-3940256099942544~3347511713</string>
+    <string name="notification_channel_prayer_name">নামাজের সময় ও আজান</string>
+    <string name="notification_channel_prayer_desc">প্রতিদিন পাঁচ ওয়াক্ত নামাজ, সাহরি ও ইফতারের অনুস্মারক</string>
+    <string name="notification_channel_media_name">কুরআন তিলাওয়াত প্লেয়ার</string>
+    <string name="notification_channel_media_desc">পটভূমিতে পবিত্র কুরআন তিলাওয়াত নিয়ন্ত্রণ</string>
+</resources>

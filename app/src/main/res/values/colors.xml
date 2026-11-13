@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="noor_royal_blue">#FF2457D6</color>
+    <color name="noor_deep_red">#FFD92735</color>
+    <color name="noor_bg_light">#FFF7F9FF</color>
+    <color name="noor_bg_dark">#FF10182B</color>
+    <color name="noor_surface_dark">#FF19243A</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="black">#FF000000</color>
+</resources>

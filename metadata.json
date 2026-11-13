@@ -1,0 +1,6 @@
+{
+  "name": "নূর লাইফ",
+  "description": "NOOR LIFE (নূর লাইফ) — সম্পূর্ণ বাংলা ইসলামিক জীবনসঙ্গী: কুরআন, নামাজের সময়, আজান, কিবলা কম্পাস, তাসবিহ, দোয়া, আসমাউল হুসনা, যাকাত, রমজান ও হাদিস।",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
