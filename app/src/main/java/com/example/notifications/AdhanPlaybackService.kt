@@ -13,52 +13,50 @@ import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.Build
 import android.os.IBinder
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.R
 import com.example.data.local.NotificationSoundType
 import com.example.domain.prayer.PrayerWaqt
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import java.io.File
 
 /**
- * Plays the Adhan alert cleanly in the foreground when a scheduled prayer alarm fires
- * (or when user tests Adhan), providing an immediate "Stop Adhan" action.
+ * Plays the real vocal Muazzin Adhan ("Allahu Akbar, Allahu Akbar...") cleanly
+ * via Android's Alarm audio stream when any of the 5 daily prayer times arrives
+ * or when the user tests Adhan playback, without triggering a notification chime sound.
  */
 class AdhanPlaybackService : Service() {
 
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var playbackJob: Job? = null
     private var mediaPlayer: MediaPlayer? = null
     private var audioFocusRequest: AudioFocusRequest? = null
-    private var remainingCycles: Int = 2
-
-    private var lastTitle: String = "নামাজের সময় • নূর লাইফ"
-    private var lastBody: String = "নামাজের ওয়াক্ত শুরু হয়েছে।"
-    private var lastWaqtId: String = PrayerWaqt.FAJR.id
+    private var remainingFallbackCycles: Int = 2
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP_ADHAN -> {
-                stopPlaybackAndSelf(keepVisualReminder = false)
+                stopPlaybackAndSelf()
                 return START_NOT_STICKY
             }
             else -> {
                 val waqtId = intent?.getStringExtra(PrayerNotificationScheduler.EXTRA_WAQT_ID) ?: PrayerWaqt.FAJR.id
-                val title = intent?.getStringExtra(PrayerNotificationScheduler.EXTRA_TITLE) ?: "নামাজের সময় • নূর লাইফ"
+                val title = intent?.getStringExtra(PrayerNotificationScheduler.EXTRA_TITLE) ?: "আজান চলছে • নূর লাইফ"
                 val body = intent?.getStringExtra(PrayerNotificationScheduler.EXTRA_BODY) ?: "নামাজের ওয়াক্ত শুরু হয়েছে।"
                 val soundType = NotificationSoundType.fromId(
                     intent?.getStringExtra(PrayerNotificationScheduler.EXTRA_SOUND_TYPE)
                 )
-                val vibrate = intent?.getBooleanExtra(PrayerNotificationScheduler.EXTRA_VIBRATE, true) ?: true
-
-                lastWaqtId = waqtId
-                lastTitle = title
-                lastBody = body
 
                 PrayerNotificationScheduler.ensureChannels(this)
                 val notif = buildAdhanNotification(title, body, waqtId)
@@ -72,7 +70,7 @@ class AdhanPlaybackService : Service() {
                     startForeground(FOREGROUND_NOTIF_ID, notif)
                 }
 
-                startAdhanAudio(waqtId, soundType, vibrate)
+                startVocalAdhan(waqtId, soundType)
                 return START_NOT_STICKY
             }
         }
@@ -104,84 +102,138 @@ class AdhanPlaybackService : Service() {
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setOngoing(true)
             .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setSound(null)
+            .setVibrate(longArrayOf(0L))
             .setContentIntent(contentPi)
             .addAction(0, "আজান বন্ধ করুন", stopPi)
             .build()
     }
 
-    private fun startAdhanAudio(waqtId: String, soundType: NotificationSoundType, vibrate: Boolean) {
+    private fun startVocalAdhan(waqtId: String, soundType: NotificationSoundType) {
+        playbackJob?.cancel()
         releasePlayerOnly()
         _isPlaying.value = true
         _activeWaqtId.value = waqtId
 
-        if (vibrate) {
-            triggerShortVibrate()
-        }
+        playbackJob = serviceScope.launch {
+            val cached = AdhanAudioRepository.getCachedAdhanFile(this@AdhanPlaybackService)
+                ?: AdhanAudioRepository.ensureAdhanCached(this@AdhanPlaybackService)
 
+            if (!_isPlaying.value) return@launch
+
+            if (cached != null && playMp3File(cached)) {
+                return@launch
+            }
+
+            // If network stream works without file cache, try streaming selected vocal Adhan URL
+            val voiceUrl = AdhanAudioRepository.getSelectedVoice(this@AdhanPlaybackService).url
+            if (playRemoteUrl(voiceUrl)) {
+                return@launch
+            }
+
+            // Pure offline emergency fallback if user never connected to internet since install
+            playRawFallback(waqtId, soundType)
+        }
+    }
+
+    private fun alarmAudioAttributes(): AudioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_ALARM)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
+
+    private fun playMp3File(file: File): Boolean {
+        return runCatching {
+            requestAudioFocus()
+            val mp = MediaPlayer().apply {
+                setAudioAttributes(alarmAudioAttributes())
+                setDataSource(file.absolutePath)
+                setOnCompletionListener {
+                    stopPlaybackAndSelf()
+                }
+                setOnErrorListener { _, _, _ ->
+                    stopPlaybackAndSelf()
+                    true
+                }
+                prepare()
+                start()
+            }
+            mediaPlayer = mp
+            true
+        }.getOrElse {
+            releasePlayerOnly()
+            false
+        }
+    }
+
+    private fun playRemoteUrl(url: String): Boolean {
+        return runCatching {
+            requestAudioFocus()
+            val mp = MediaPlayer().apply {
+                setAudioAttributes(alarmAudioAttributes())
+                setDataSource(url)
+                setOnPreparedListener { player ->
+                    if (_isPlaying.value) {
+                        player.start()
+                    } else {
+                        stopPlaybackAndSelf()
+                    }
+                }
+                setOnCompletionListener {
+                    stopPlaybackAndSelf()
+                }
+                setOnErrorListener { _, _, _ ->
+                    stopPlaybackAndSelf()
+                    true
+                }
+                prepareAsync()
+            }
+            mediaPlayer = mp
+            true
+        }.getOrElse {
+            releasePlayerOnly()
+            false
+        }
+    }
+
+    private fun playRawFallback(waqtId: String, soundType: NotificationSoundType) {
         val rawRes = if (waqtId == PrayerWaqt.FAJR.id || waqtId == "sehri" || soundType == NotificationSoundType.FAJR_CHIME) {
             R.raw.fajr_chime
         } else {
             R.raw.adhan_chime
         }
-
         requestAudioFocus()
-        remainingCycles = 2
-
+        remainingFallbackCycles = 2
         runCatching {
             val mp = MediaPlayer.create(
                 this,
                 rawRes,
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build(),
+                alarmAudioAttributes(),
                 AudioManager.AUDIO_SESSION_ID_GENERATE
             ) ?: error("MediaPlayer creation returned null")
-
             mp.setOnCompletionListener { player ->
-                remainingCycles--
-                if (remainingCycles > 0) {
+                remainingFallbackCycles--
+                if (remainingFallbackCycles > 0 && _isPlaying.value) {
                     runCatching {
                         player.seekTo(0)
                         player.start()
-                    }.onFailure {
-                        stopPlaybackAndSelf(keepVisualReminder = true)
-                    }
+                    }.onFailure { stopPlaybackAndSelf() }
                 } else {
-                    stopPlaybackAndSelf(keepVisualReminder = true)
+                    stopPlaybackAndSelf()
                 }
             }
             mp.setOnErrorListener { _, _, _ ->
-                stopPlaybackAndSelf(keepVisualReminder = true)
+                stopPlaybackAndSelf()
                 true
             }
             mp.start()
             mediaPlayer = mp
         }.onFailure {
-            stopPlaybackAndSelf(keepVisualReminder = true)
-        }
-    }
-
-    private fun triggerShortVibrate() {
-        runCatching {
-            val pattern = longArrayOf(0L, 280L, 180L, 280L)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vm = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                vm.defaultVibrator.vibrate(VibrationEffect.createWaveform(pattern, -1))
-            } else {
-                @Suppress("DEPRECATION")
-                val v = getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    v.vibrate(VibrationEffect.createWaveform(pattern, -1))
-                } else {
-                    @Suppress("DEPRECATION")
-                    v.vibrate(pattern, -1)
-                }
-            }
+            stopPlaybackAndSelf()
         }
     }
 
@@ -189,12 +241,7 @@ class AdhanPlaybackService : Service() {
         val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build()
-                )
+                .setAudioAttributes(alarmAudioAttributes())
                 .build()
             audioFocusRequest = req
             am.requestAudioFocus(req)
@@ -207,6 +254,8 @@ class AdhanPlaybackService : Service() {
     private fun releasePlayerOnly() {
         runCatching {
             mediaPlayer?.stop()
+        }
+        runCatching {
             mediaPlayer?.release()
         }
         mediaPlayer = null
@@ -217,7 +266,8 @@ class AdhanPlaybackService : Service() {
         audioFocusRequest = null
     }
 
-    private fun stopPlaybackAndSelf(keepVisualReminder: Boolean = false) {
+    private fun stopPlaybackAndSelf() {
+        playbackJob?.cancel()
         releasePlayerOnly()
         _isPlaying.value = false
         _activeWaqtId.value = null
@@ -228,21 +278,12 @@ class AdhanPlaybackService : Service() {
             stopForeground(true)
         }
         (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(FOREGROUND_NOTIF_ID)
-        if (keepVisualReminder) {
-            PrayerNotificationScheduler.showNotification(
-                context = this,
-                notificationId = 3000 + lastWaqtId.hashCode(),
-                waqtId = lastWaqtId,
-                title = lastTitle,
-                body = lastBody,
-                soundType = NotificationSoundType.SILENT,
-                vibrate = false
-            )
-        }
         stopSelf()
     }
 
     override fun onDestroy() {
+        playbackJob?.cancel()
+        serviceScope.cancel()
         releasePlayerOnly()
         _isPlaying.value = false
         _activeWaqtId.value = null

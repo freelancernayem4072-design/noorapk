@@ -40,6 +40,7 @@ import com.example.domain.prayer.PrayerWaqt
 import com.example.localization.AppLanguage
 import com.example.localization.BengaliFormatter
 import com.example.location.LocationHelper
+import com.example.notifications.AdhanAudioRepository
 import com.example.notifications.AdhanPlaybackService
 import com.example.notifications.PrayerNotificationScheduler
 import com.example.ui.theme.ThemeMode
@@ -116,6 +117,10 @@ class NoorViewModel(application: Application) : AndroidViewModel(application) {
 
     val audioState: StateFlow<QuranPlaybackState> = audioController.state
     val isAdhanPlaying: StateFlow<Boolean> = AdhanPlaybackService.isPlaying
+    val isVocalAdhanCached: StateFlow<Boolean> = AdhanAudioRepository.isVocalAdhanCached
+    val isAdhanDownloading: StateFlow<Boolean> = AdhanAudioRepository.isDownloading
+    private val _selectedAdhanVoiceId = MutableStateFlow(AdhanAudioRepository.getSelectedVoice(app).id)
+    val selectedAdhanVoiceId: StateFlow<String> = _selectedAdhanVoiceId.asStateFlow()
 
     val bookmarks: StateFlow<List<BookmarkEntity>> = db.bookmarkDao().observeAll().stateIn(
         scope = viewModelScope,
@@ -225,6 +230,13 @@ class NoorViewModel(application: Application) : AndroidViewModel(application) {
             _hadithList.value = (bundled + cached).distinctBy { it.id }
         }
         // Live 1-second prayer countdown ticker & auto-reschedule on pref changes or Waqt transition
+        viewModelScope.launch {
+            isOnline.collect { online ->
+                if (online && !AdhanAudioRepository.refreshCacheState(app)) {
+                    AdhanAudioRepository.ensureAdhanCached(app)
+                }
+            }
+        }
         viewModelScope.launch {
             prefs.collectLatest { currentPrefs ->
                 _livePrayerStatus.value = computeLivePrayerStatus(currentPrefs)
@@ -795,6 +807,28 @@ class NoorViewModel(application: Application) : AndroidViewModel(application) {
     fun rescheduleAlarmsNow(context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
             PrayerNotificationScheduler.scheduleUpcomingPrayers(context, prefs.value)
+        }
+    }
+
+    fun downloadVocalAdhanNow(context: Context) {
+        viewModelScope.launch {
+            val file = AdhanAudioRepository.ensureAdhanCached(context, forceSelectedVoice = true)
+            _statusBannerMessage.value = if (file != null) {
+                "মুয়াজ্জিনের পূর্ণাঙ্গ আজান অডিও অফলাইনের জন্য সংরক্ষিত হয়েছে।"
+            } else {
+                "আজান অডিও ডাউনলোড করা যায়নি। ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।"
+            }
+        }
+    }
+
+    fun selectAdhanVoice(context: Context, voiceId: String) {
+        AdhanAudioRepository.setSelectedVoiceId(context, voiceId)
+        _selectedAdhanVoiceId.value = voiceId
+        viewModelScope.launch {
+            val file = AdhanAudioRepository.ensureAdhanCached(context, forceSelectedVoice = true)
+            if (file != null) {
+                _statusBannerMessage.value = "নির্বাচিত মুয়াজ্জিনের আজান অডিও প্রস্তুত হয়েছে।"
+            }
         }
     }
 }

@@ -31,7 +31,7 @@ object PrayerNotificationScheduler {
     const val EXTRA_SOUND_TYPE = "extra_sound_type"
     const val EXTRA_VIBRATE = "extra_vibrate"
 
-    const val CHANNEL_ADHAN_LIVE = "noor_prayer_adhan_live_v1"
+    const val CHANNEL_ADHAN_LIVE = "noor_prayer_adhan_live_v2"
     private const val CHANNEL_ADHAN = "noor_prayer_adhan_v1"
     private const val CHANNEL_FAJR = "noor_prayer_fajr_v1"
     private const val CHANNEL_DEFAULT = "noor_prayer_default_v1"
@@ -51,10 +51,10 @@ object PrayerNotificationScheduler {
 
         val chAdhanLive = NotificationChannel(
             CHANNEL_ADHAN_LIVE,
-            "আজান প্লেয়ার অ্যালার্ট",
-            NotificationManager.IMPORTANCE_HIGH
+            "সরাসরি আজান প্লেয়ার",
+            NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "আজানের সময় সরাসরি আজান ধ্বনি ও নিয়ন্ত্রণ দেখায়"
+            description = "আজান চলাকালীন কোনো আলাদা নোটিফিকেশন শব্দ ছাড়াই বন্ধ করার নিয়ন্ত্রণ দেখায়"
             setSound(null, null)
             enableVibration(false)
         }
@@ -255,8 +255,8 @@ object PrayerNotificationScheduler {
             context = context,
             notificationId = 9999,
             waqtId = PrayerWaqt.FAJR.id,
-            title = "নূর লাইফ • আজান ও নামাজ অ্যালার্ট",
-            body = "${prefs.city.bnName}: আজানের সময় হলে ঠিক এভাবেই নোটিফিকেশন ও আজান ধ্বনি বেজে উঠবে।",
+            title = "নূর লাইফ • আজান চলছে",
+            body = "${prefs.city.bnName}: পাঁচ ওয়াক্ত আজানের সময় হলে ঠিক এভাবেই মুয়াজ্জিনের আজান বেজে উঠবে।",
             soundType = prefs.notificationSound,
             vibrate = prefs.vibrationEnabled
         )

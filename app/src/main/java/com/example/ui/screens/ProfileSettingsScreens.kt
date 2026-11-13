@@ -83,6 +83,7 @@ import com.example.localization.AppLanguage
 import com.example.localization.AppStrings
 import com.example.localization.BengaliFormatter
 import com.example.navigation.NoorRoute
+import com.example.notifications.AdhanAudioRepository
 import com.example.notifications.PrayerNotificationScheduler
 import com.example.ui.components.NoorBrandGradientBanner
 import com.example.ui.components.NoorElevatedCard
@@ -295,6 +296,9 @@ fun SettingsScreen(
 ) {
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
     val downloadedAudio by viewModel.downloadedAudio.collectAsStateWithLifecycle()
+    val selectedVoiceId by viewModel.selectedAdhanVoiceId.collectAsStateWithLifecycle()
+    val isVocalAdhanCached by viewModel.isVocalAdhanCached.collectAsStateWithLifecycle()
+    val isAdhanDownloading by viewModel.isAdhanDownloading.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     val notifPermissionLauncher = rememberLauncherForActivityResult(
@@ -450,7 +454,7 @@ fun SettingsScreen(
                     }
 
                     Spacer(Modifier.height(8.dp))
-                    Text("নোটিফিকেশন সাউন্ড", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    Text("আজান ও নোটিফিকেশন ধরন", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                     NotificationSoundType.entries.forEach { st ->
                         FilterChip(
                             selected = prefs.notificationSound == st,
@@ -459,12 +463,32 @@ fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
+
+                    Spacer(Modifier.height(8.dp))
+                    Text("মুয়াজ্জিনের কণ্ঠস্বর (আজান)", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = when {
+                            isAdhanDownloading -> "আজান অডিও ডাউনলোড হচ্ছে..."
+                            isVocalAdhanCached -> "অফলাইন আজান অডিও প্রস্তুত আছে।"
+                            else -> "ইন্টারনেট চালু করে একবার ডাউনলোড করলে অফলাইনেও আজান বাজবে।"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    AdhanAudioRepository.voices.forEach { voice ->
+                        FilterChip(
+                            selected = selectedVoiceId == voice.id,
+                            onClick = { viewModel.selectAdhanVoice(context, voice.id) },
+                            label = { Text(voice.nameBn) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                     Spacer(Modifier.height(6.dp))
                     OutlinedButton(
-                        onClick = { PrayerNotificationScheduler.showImmediateTestNotification(context, prefs) },
+                        onClick = { viewModel.testAdhanNow(context) },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("পরীক্ষামূলক নোটিফিকেশন পাঠান")
+                        Text("আজান বাজিয়ে পরীক্ষা করুন")
                     }
                 }
             }

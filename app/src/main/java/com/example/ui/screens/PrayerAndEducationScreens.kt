@@ -96,6 +96,7 @@ import com.example.localization.AppLanguage
 import com.example.localization.AppStrings
 import com.example.localization.BengaliFormatter
 import com.example.navigation.NoorRoute
+import com.example.notifications.AdhanAudioRepository
 import com.example.notifications.PrayerNotificationScheduler
 import com.example.ui.components.ArabicRtlText
 import com.example.ui.components.NoorBrandGradientBanner
@@ -122,6 +123,8 @@ fun PrayerHubScreen(
     val isDetecting by viewModel.locationDetecting.collectAsStateWithLifecycle()
     val statusMsg by viewModel.statusBannerMessage.collectAsStateWithLifecycle()
     val isAdhanPlaying by viewModel.isAdhanPlaying.collectAsStateWithLifecycle()
+    val isVocalAdhanCached by viewModel.isVocalAdhanCached.collectAsStateWithLifecycle()
+    val isAdhanDownloading by viewModel.isAdhanDownloading.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -511,6 +514,24 @@ fun PrayerHubScreen(
                         onAction = {
                             runCatching {
                                 context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                            }
+                        }
+                    )
+                    Spacer(Modifier.height(6.dp))
+
+                    // 4. Real Vocal Adhan Offline Audio status
+                    AdhanReadinessStatusRow(
+                        title = "মুয়াজ্জিনের পূর্ণাঙ্গ আজান অডিও",
+                        granted = isVocalAdhanCached,
+                        statusText = when {
+                            isAdhanDownloading -> "আজান অডিও ডাউনলোড হচ্ছে..."
+                            isVocalAdhanCached -> "${AdhanAudioRepository.getSelectedVoice(context).nameBn} • অফলাইনে প্রস্তুত"
+                            else -> "ইন্টারনেট চালু থাকলে স্বয়ংক্রিয় ডাউনলোড হবে"
+                        },
+                        actionText = if (isAdhanDownloading) "অপেক্ষা..." else "ডাউনলোড",
+                        onAction = {
+                            if (!isAdhanDownloading) {
+                                viewModel.downloadVocalAdhanNow(context)
                             }
                         }
                     )

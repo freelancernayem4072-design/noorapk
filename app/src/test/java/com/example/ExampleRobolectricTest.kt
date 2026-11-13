@@ -174,7 +174,8 @@ class ExampleRobolectricTest {
             com.example.notifications.PrayerNotificationScheduler.CHANNEL_ADHAN_LIVE
         )
         assertNotNull(liveChannel)
-        assertEquals(android.app.NotificationManager.IMPORTANCE_HIGH, liveChannel.importance)
+        assertEquals(android.app.NotificationManager.IMPORTANCE_LOW, liveChannel.importance)
+        assertTrue(com.example.notifications.AdhanAudioRepository.voices.isNotEmpty())
 
         com.example.notifications.PrayerNotificationScheduler.scheduleUpcomingPrayers(
             context,

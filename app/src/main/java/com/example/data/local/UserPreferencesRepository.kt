@@ -23,9 +23,9 @@ import kotlinx.coroutines.flow.map
 private val Context.noorDataStore: DataStore<Preferences> by preferencesDataStore(name = "noor_life_prefs")
 
 enum class NotificationSoundType(val id: String, val bnName: String, val enName: String) {
-    ADHAN_CHIME("adhan_chime", "আজান সুরেলা ধ্বনি", "Adhan Melodic Chime"),
-    FAJR_CHIME("fajr_chime", "ফজর আজান ধ্বনি", "Fajr Melodic Chime"),
-    SYSTEM_DEFAULT("system_default", "ফোনের ডিফল্ট সাউন্ড", "Device Default Sound"),
+    ADHAN_CHIME("adhan_chime", "পূর্ণাঙ্গ আজান (মুয়াজ্জিনের কণ্ঠস্বর)", "Full Vocal Adhan (Muezzin)"),
+    FAJR_CHIME("fajr_chime", "ফজরের আজান (মুয়াজ্জিনের কণ্ঠস্বর)", "Fajr Vocal Adhan"),
+    SYSTEM_DEFAULT("system_default", "শুধু নোটিফিকেশন সাউন্ড", "Notification Sound Only"),
     SILENT("silent", "নীরব (শুধু বার্তা)", "Silent (Visual Only)");
 
     companion object {
