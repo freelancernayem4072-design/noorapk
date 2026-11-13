@@ -40,6 +40,7 @@ import com.example.domain.prayer.PrayerWaqt
 import com.example.localization.AppLanguage
 import com.example.localization.BengaliFormatter
 import com.example.location.LocationHelper
+import com.example.notifications.AdhanPlaybackService
 import com.example.notifications.PrayerNotificationScheduler
 import com.example.ui.theme.ThemeMode
 import kotlinx.coroutines.Dispatchers
@@ -50,7 +51,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -62,6 +62,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 data class LivePrayerStatus(
@@ -69,6 +70,8 @@ data class LivePrayerStatus(
     val currentWaqt: PrayerWaqt,
     val nextSlot: PrayerTimeSlot,
     val countdownSeconds: Long,
+    val liveClockTextBn: String,
+    val liveClockTextEn: String,
     val hijriDate: HijriDateInfo,
     val banglaDate: BanglaDateInfo,
     val gregorianDateBn: String,
@@ -112,6 +115,7 @@ class NoorViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     val audioState: StateFlow<QuranPlaybackState> = audioController.state
+    val isAdhanPlaying: StateFlow<Boolean> = AdhanPlaybackService.isPlaying
 
     val bookmarks: StateFlow<List<BookmarkEntity>> = db.bookmarkDao().observeAll().stateIn(
         scope = viewModelScope,
@@ -220,7 +224,7 @@ class NoorViewModel(application: Application) : AndroidViewModel(application) {
             }
             _hadithList.value = (bundled + cached).distinctBy { it.id }
         }
-        // Live 1-second prayer countdown ticker & auto-reschedule on pref changes
+        // Live 1-second prayer countdown ticker & auto-reschedule on pref changes or Waqt transition
         viewModelScope.launch {
             prefs.collectLatest { currentPrefs ->
                 _livePrayerStatus.value = computeLivePrayerStatus(currentPrefs)
@@ -231,8 +235,16 @@ class NoorViewModel(application: Application) : AndroidViewModel(application) {
         }
         viewModelScope.launch {
             while (true) {
-                delay(1000L)
-                _livePrayerStatus.value = computeLivePrayerStatus(prefs.value)
+                val msToNextSecond = (1005L - (System.currentTimeMillis() % 1000L)).coerceIn(250L, 1050L)
+                delay(msToNextSecond)
+                val prevNextEpoch = _livePrayerStatus.value.nextSlot.epochMillis
+                val updated = computeLivePrayerStatus(prefs.value)
+                _livePrayerStatus.value = updated
+                if (updated.nextSlot.epochMillis != prevNextEpoch) {
+                    withContext(Dispatchers.IO) {
+                        PrayerNotificationScheduler.scheduleUpcomingPrayers(app, prefs.value)
+                    }
+                }
             }
         }
     }
@@ -300,10 +312,14 @@ class NoorViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun computeLivePrayerStatus(userPrefs: UserPreferences): LivePrayerStatus {
         val now = System.currentTimeMillis()
-        val cal = Calendar.getInstance()
+        val cityTz = TimeZone.getTimeZone(userPrefs.city.timeZoneId)
+        val cal = Calendar.getInstance(cityTz).apply { timeInMillis = now }
         val y = cal.get(Calendar.YEAR)
         val m = cal.get(Calendar.MONTH) + 1
         val d = cal.get(Calendar.DAY_OF_MONTH)
+        val hour24 = cal.get(Calendar.HOUR_OF_DAY)
+        val minute = cal.get(Calendar.MINUTE)
+        val second = cal.get(Calendar.SECOND)
 
         val today = PrayerTimeCalculator.calculateDailySchedule(
             y, m, d, userPrefs.city, userPrefs.calculationMethod, userPrefs.asrMadhhab
@@ -357,6 +373,8 @@ class NoorViewModel(application: Application) : AndroidViewModel(application) {
             currentWaqt = currentWaqt,
             nextSlot = nextSlot,
             countdownSeconds = remainingSec,
+            liveClockTextBn = BengaliFormatter.formatLiveClock(hour24, minute, second, AppLanguage.BENGALI),
+            liveClockTextEn = BengaliFormatter.formatLiveClock(hour24, minute, second, AppLanguage.ENGLISH),
             hijriDate = hijri,
             banglaDate = bangla,
             gregorianDateBn = gregorianBn,
@@ -764,5 +782,19 @@ class NoorViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearStatusBanner() {
         _statusBannerMessage.value = null
+    }
+
+    fun testAdhanNow(context: Context) {
+        PrayerNotificationScheduler.showImmediateTestNotification(context, prefs.value)
+    }
+
+    fun stopAdhanPlayback(context: Context) {
+        AdhanPlaybackService.stopAdhan(context)
+    }
+
+    fun rescheduleAlarmsNow(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            PrayerNotificationScheduler.scheduleUpcomingPrayers(context, prefs.value)
+        }
     }
 }

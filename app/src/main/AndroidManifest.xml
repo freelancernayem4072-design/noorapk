@@ -34,11 +34,6 @@
         android:theme="@style/Theme.NoorLife"
         android:usesCleartextTraffic="false">
 
-        <!-- Google AdMob Test App ID (replace with production App ID before Play Store release) -->
-        <meta-data
-            android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="@string/admob_app_id" />
-
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -60,6 +55,12 @@
             </intent-filter>
         </service>
 
+        <!-- Foreground Adhan Alert Service -->
+        <service
+            android:name=".notifications.AdhanPlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
         <!-- Prayer Notification Alarm & Boot Receivers -->
         <receiver
             android:name=".notifications.PrayerAlarmReceiver"
@@ -72,6 +73,8 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
 

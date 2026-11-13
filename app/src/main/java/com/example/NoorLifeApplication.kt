@@ -1,7 +1,6 @@
 package com.example
 
 import android.app.Application
-import com.example.ads.NoorAdManager
 import com.example.audio.QuranAudioController
 import com.example.data.local.NoorDatabase
 import com.example.data.local.UserPreferencesRepository
@@ -39,6 +38,5 @@ class NoorLifeApplication : Application() {
         super.onCreate()
         PrayerNotificationScheduler.ensureChannels(this)
         PrayerRescheduleWorker.enqueuePeriodic(this)
-        NoorAdManager.initialize(this)
     }
 }

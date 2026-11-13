@@ -56,7 +56,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.ads.NoorRespectfulBannerAd
 import com.example.data.content.IslamicKnowledgeData
 import com.example.domain.prayer.PrayerTimeCalculator
 import com.example.localization.BengaliFormatter
@@ -383,7 +382,6 @@ fun ZakatCalculatorScreen(
     onBack: () -> Unit
 ) {
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
-    val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
 
     var cashInput by remember { mutableStateOf("") }
     var bankInput by remember { mutableStateOf("") }
@@ -573,11 +571,6 @@ fun ZakatCalculatorScreen(
                         )
                     }
                 }
-            }
-
-            // Respectful Banner Ad (utility screen only)
-            item {
-                NoorRespectfulBannerAd(isOnline = isOnline)
             }
         }
     }

@@ -1,7 +1,11 @@
 package com.example.ui.screens
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -24,8 +28,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -34,10 +40,15 @@ import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.LocationCity
 import androidx.compose.material.icons.filled.Mosque
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -56,6 +67,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -66,18 +78,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.content.DuasAndKalimasData
 import com.example.data.content.NamazAndWuduData
+import com.example.data.content.PrayerRakatDetail
 import com.example.domain.prayer.AsrMadhhab
 import com.example.domain.prayer.BangladeshCitiesCatalog
 import com.example.domain.prayer.CalculationMethod
+import com.example.localization.AppLanguage
 import com.example.localization.AppStrings
 import com.example.localization.BengaliFormatter
 import com.example.navigation.NoorRoute
+import com.example.notifications.PrayerNotificationScheduler
 import com.example.ui.components.ArabicRtlText
 import com.example.ui.components.NoorBrandGradientBanner
 import com.example.ui.components.NoorElevatedCard
@@ -86,6 +105,7 @@ import com.example.ui.components.SectionHeader
 import com.example.ui.components.copyTextToClipboard
 import com.example.ui.components.sharePlainText
 import com.example.ui.theme.DeepRed
+import com.example.ui.theme.EmeraldSuccess
 import com.example.ui.theme.RoyalBlue
 import com.example.viewmodel.NoorViewModel
 import java.util.Calendar
@@ -101,7 +121,37 @@ fun PrayerHubScreen(
     val liveStatus by viewModel.livePrayerStatus.collectAsStateWithLifecycle()
     val isDetecting by viewModel.locationDetecting.collectAsStateWithLifecycle()
     val statusMsg by viewModel.statusBannerMessage.collectAsStateWithLifecycle()
+    val isAdhanPlaying by viewModel.isAdhanPlaying.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    fun checkNotifPermission(): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    } else true
+
+    var notifGranted by remember { mutableStateOf(checkNotifPermission()) }
+    var exactAlarmAllowed by remember { mutableStateOf(PrayerNotificationScheduler.canScheduleExactAlarms(context)) }
+    var batteryUnrestricted by remember { mutableStateOf(PrayerNotificationScheduler.isIgnoringBatteryOptimizations(context)) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                notifGranted = checkNotifPermission()
+                exactAlarmAllowed = PrayerNotificationScheduler.canScheduleExactAlarms(context)
+                batteryUnrestricted = PrayerNotificationScheduler.isIgnoringBatteryOptimizations(context)
+                viewModel.rescheduleAlarmsNow(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        notifGranted = granted
+        if (granted) viewModel.rescheduleAlarmsNow(context)
+    }
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var showCityPicker by remember { mutableStateOf(false) }
@@ -156,7 +206,36 @@ fun PrayerHubScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.9f)
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color.Black.copy(alpha = 0.2f)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (prefs.language == AppLanguage.BENGALI) {
+                                "লাইভ: ${liveStatus.liveClockTextBn}"
+                            } else {
+                                "Live: ${liveStatus.liveClockTextEn}"
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "${liveStatus.nextSlot.waqt.localizedName(strings)}: ${BengaliFormatter.formatCountdown(liveStatus.countdownSeconds, prefs.language)}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White.copy(alpha = 0.92f)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Surface(
                         onClick = { requestGpsOrDetect() },
@@ -188,6 +267,44 @@ fun PrayerHubScreen(
                             Icon(Icons.Filled.LocationCity, null, tint = RoyalBlue, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("শহর পরিবর্তন", style = MaterialTheme.typography.labelMedium, color = RoyalBlue, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (isAdhanPlaying) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = DeepRed,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("prayer_stop_adhan_banner")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Filled.VolumeUp, null, tint = Color.White)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "আজান চলছে — নামাজের সময় হয়েছে",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Button(
+                            onClick = { viewModel.stopAdhanPlayback(context) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = DeepRed),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Filled.StopCircle, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("বন্ধ করুন", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -242,8 +359,9 @@ fun PrayerHubScreen(
 
         item {
             TabRow(selectedTabIndex = selectedTab) {
-                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("দৈনিক সূচি ও নোটিফিকেশন") })
-                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("মাসিক ক্যালেন্ডার") })
+                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("দৈনিক সূচি") })
+                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("রাকাত সংখ্যা") }, modifier = Modifier.testTag("prayer_tab_rakat"))
+                Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("মাসিক সূচি") })
             }
         }
 
@@ -327,6 +445,105 @@ fun PrayerHubScreen(
                 }
             }
 
+            // Real-Time Adhan Alarm Readiness & Test Card
+            item {
+                NoorElevatedCard(
+                    modifier = Modifier.testTag("adhan_readiness_card")
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Filled.NotificationsActive, null, tint = DeepRed)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "রিয়েল-টাইম আজান ও অ্যালার্ম অবস্থা",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        IconButton(onClick = { viewModel.rescheduleAlarmsNow(context) }) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "অ্যালার্ম রিসেট করুন", tint = RoyalBlue)
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+
+                    // 1. Notification permission status
+                    AdhanReadinessStatusRow(
+                        title = "নোটিফিকেশন অনুমতি",
+                        granted = notifGranted,
+                        statusText = if (notifGranted) "চালু আছে" else "অনুমতি প্রয়োজন",
+                        actionText = "অনুমতি দিন",
+                        onAction = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        }
+                    )
+                    Spacer(Modifier.height(6.dp))
+
+                    // 2. Exact Alarm status
+                    AdhanReadinessStatusRow(
+                        title = "সঠিক সময়ের অ্যালার্ম",
+                        granted = exactAlarmAllowed,
+                        statusText = if (exactAlarmAllowed) "সঠিক সেকেন্ডে সক্রিয়" else "অ্যালার্ম চালু করুন",
+                        actionText = "সেটিংস",
+                        onAction = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                runCatching {
+                                    context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                        data = Uri.parse("package:${context.packageName}")
+                                    })
+                                }
+                            }
+                        }
+                    )
+                    Spacer(Modifier.height(6.dp))
+
+                    // 3. Battery optimization notice
+                    AdhanReadinessStatusRow(
+                        title = "ব্যাটারি অপ্টিমাইজেশন",
+                        granted = batteryUnrestricted,
+                        statusText = if (batteryUnrestricted) "আনরেস্ট্রিক্টেড" else "ব্যাকগ্রাউন্ড চালু রাখুন",
+                        actionText = "সেটিংস",
+                        onAction = {
+                            runCatching {
+                                context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                            }
+                        }
+                    )
+
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { viewModel.testAdhanNow(context) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("test_adhan_button")
+                        ) {
+                            Icon(Icons.Filled.VolumeUp, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("আজান বাজিয়ে দেখুন")
+                        }
+                        if (isAdhanPlaying) {
+                            OutlinedButton(
+                                onClick = { viewModel.stopAdhanPlayback(context) },
+                                modifier = Modifier.testTag("stop_adhan_button")
+                            ) {
+                                Icon(Icons.Filled.StopCircle, null, tint = DeepRed, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("বন্ধ", color = DeepRed, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
             // Calculation Method & Madhhab quick settings
             item {
                 NoorElevatedCard {
@@ -351,6 +568,13 @@ fun PrayerHubScreen(
                         )
                     }
                 }
+            }
+        } else if (selectedTab == 1) {
+            item {
+                InteractivePrayerRakatHeaderCard()
+            }
+            items(NamazAndWuduData.rakatDetailsList, key = { it.id }) { detail ->
+                InteractivePrayerRakatCard(detail = detail)
             }
         } else {
             item {
@@ -483,6 +707,50 @@ fun PrayerHubScreen(
 }
 
 @Composable
+private fun AdhanReadinessStatusRow(
+    title: String,
+    granted: Boolean,
+    statusText: String,
+    actionText: String,
+    onAction: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = if (granted) EmeraldSuccess.copy(alpha = 0.08f) else DeepRed.copy(alpha = 0.08f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                Icon(
+                    imageVector = if (granted) Icons.Filled.CheckCircle else Icons.Filled.WarningAmber,
+                    contentDescription = null,
+                    tint = if (granted) EmeraldSuccess else DeepRed,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = statusText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (granted) EmeraldSuccess else DeepRed
+                    )
+                }
+            }
+            if (!granted) {
+                TextButton(onClick = onAction) {
+                    Text(actionText, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun PrayerFeatureChip(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -550,32 +818,10 @@ fun NamazEducationScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                NoorElevatedCard(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)) {
-                    Text(
-                        "পাঁচ ওয়াক্ত ও জুমার নামাজের রাকাত সংখ্যা",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    NamazAndWuduData.rakatTable.forEach { row ->
-                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(row.waqtBn, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                Text("মোট: ${row.totalBn}", style = MaterialTheme.typography.labelMedium, color = DeepRed, fontWeight = FontWeight.Bold)
-                            }
-                            Text(
-                                text = "পূর্বে: ${row.sunnatBeforeBn} | ফরজ: ${row.fardBn} | পরে: ${row.sunnatAfterBn} | বিতর/নফল: ${row.witrOrNaflBn}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            HorizontalDivider(modifier = Modifier.padding(top = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                        }
-                    }
-                }
+                InteractivePrayerRakatHeaderCard()
+            }
+            items(NamazAndWuduData.rakatDetailsList, key = { "edu_${it.id}" }) { detail ->
+                InteractivePrayerRakatCard(detail = detail)
             }
 
             items(NamazAndWuduData.salahTopics, key = { it.id }) { topic ->
@@ -797,6 +1043,158 @@ fun FiveKalimasScreen(onBack: () -> Unit) {
                     Text("উচ্চারণ: ${kalima.pronunciationBn}", style = MaterialTheme.typography.bodyMedium, color = RoyalBlue)
                     Spacer(Modifier.height(4.dp))
                     Text("অর্থ: ${kalima.meaningBn}", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun InteractivePrayerRakatHeaderCard() {
+    NoorElevatedCard(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)) {
+        Text(
+            text = "পাঁচ ওয়াক্ত ও বিশেষ নামাজের রাকাত তালিকা",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "প্রতিদিন মোট ফরজ: ১৭ রাকাত • ওয়াজিব (বিতর): ৩ রাকাত • সুন্নতে মুয়াক্কাদা: ১২ রাকাত",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = DeepRed
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "যেকোনো ওয়াক্তের ওপর ট্যাপ করলে কোন সময় কোন নামাজ কত রাকাত ও কী ক্রমে পড়তে হবে তা দেখতে পারবেন।",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+fun InteractivePrayerRakatCard(detail: PrayerRakatDetail) {
+    var expanded by remember(detail.id) { mutableStateOf(false) }
+
+    NoorElevatedCard {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("rakat_card_${detail.id}")
+                .clickable { expanded = !expanded }
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = detail.waqtBn,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = detail.timeHintBn,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = DeepRed.copy(alpha = 0.12f)
+                ) {
+                    Text(
+                        text = detail.totalRakatBn,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = DeepRed,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
+                }
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (expanded) "সংক্ষিপ্ত করুন" else "বিস্তারিত দেখুন",
+                    tint = RoyalBlue
+                )
+            }
+
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = detail.fardSummaryBn,
+                style = MaterialTheme.typography.bodySmall,
+                color = RoyalBlue,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            AnimatedVisibility(visible = expanded) {
+                Column(modifier = Modifier.padding(top = 10.dp)) {
+                    HorizontalDivider()
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "ধারাবাহিক রাকাত বিন্যাস:",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    detail.steps.forEach { step ->
+                        val badgeColor = if (step.isMandatory) DeepRed else RoyalBlue
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = badgeColor.copy(alpha = 0.08f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "${step.orderBn} — ${step.rakatCountBn}",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = badgeColor
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = badgeColor.copy(alpha = 0.16f)
+                                    ) {
+                                        Text(
+                                            text = step.typeBn,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = badgeColor,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = step.noteBn,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    if (detail.scholarlyNoteBn.isNotBlank()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "মাসয়ালা ও নোট: ${detail.scholarlyNoteBn}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
         }

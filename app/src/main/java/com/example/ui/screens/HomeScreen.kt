@@ -1,5 +1,13 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Calculate
@@ -32,20 +41,30 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Mosque
 import androidx.compose.material.icons.filled.NightsStay
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.VolunteerActivism
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.filled.WbTwilight
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,6 +77,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.data.content.IslamicKnowledgeData
@@ -66,6 +89,7 @@ import com.example.localization.AppLanguage
 import com.example.localization.AppStrings
 import com.example.localization.BengaliFormatter
 import com.example.navigation.NoorRoute
+import com.example.notifications.PrayerNotificationScheduler
 import com.example.ui.components.ArabicRtlText
 import com.example.ui.components.ContentActionRow
 import com.example.ui.components.NoorElevatedCard
@@ -101,7 +125,37 @@ fun HomeScreen(
     val dailyAyah by viewModel.dailyAyah.collectAsStateWithLifecycle()
     val bookmarks by viewModel.bookmarks.collectAsStateWithLifecycle()
     val recents by viewModel.recentItems.collectAsStateWithLifecycle()
+    val isAdhanPlaying by viewModel.isAdhanPlaying.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    fun checkNotifPermission(): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    } else true
+
+    var notifPermissionGranted by remember { mutableStateOf(checkNotifPermission()) }
+    var exactAlarmAllowed by remember { mutableStateOf(PrayerNotificationScheduler.canScheduleExactAlarms(context)) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                notifPermissionGranted = checkNotifPermission()
+                exactAlarmAllowed = PrayerNotificationScheduler.canScheduleExactAlarms(context)
+                viewModel.rescheduleAlarmsNow(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        notifPermissionGranted = granted
+        if (granted) {
+            viewModel.rescheduleAlarmsNow(context)
+        }
+    }
 
     val dayIndex = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
     val dailyHadith = IslamicKnowledgeData.curatedHadith[dayIndex % IslamicKnowledgeData.curatedHadith.size]
@@ -195,6 +249,58 @@ fun HomeScreen(
 
         item {
             OfflineStatusBanner(isOnline = isOnline, message = strings.offlineBanner)
+        }
+
+        if (isAdhanPlaying) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = DeepRed,
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .fillMaxWidth()
+                        .testTag("home_stop_adhan_banner")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Filled.VolumeUp, contentDescription = null, tint = Color.White)
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = if (prefs.language == AppLanguage.BENGALI) "আজান চলছে" else "Adhan Playing",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (prefs.language == AppLanguage.BENGALI) "নামাজের ওয়াক্ত শুরু হয়েছে" else "Prayer time has started",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White.copy(alpha = 0.9f)
+                                )
+                            }
+                        }
+                        Button(
+                            onClick = { viewModel.stopAdhanPlayback(context) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = DeepRed),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Filled.StopCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = if (prefs.language == AppLanguage.BENGALI) "বন্ধ করুন" else "Stop",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         // Hero Prayer Dashboard Card
@@ -295,6 +401,23 @@ fun HomeScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = Color.White.copy(alpha = 0.92f)
                             )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color.White.copy(alpha = 0.16f)
+                            ) {
+                                Text(
+                                    text = if (prefs.language == AppLanguage.BENGALI) {
+                                        "রিয়েল-টাইম: ${liveStatus.liveClockTextBn}"
+                                    } else {
+                                        "Live: ${liveStatus.liveClockTextEn}"
+                                    },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
                         }
 
                         Surface(
@@ -352,6 +475,64 @@ fun HomeScreen(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color.White
                             )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!notifPermissionGranted || !exactAlarmAllowed) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .fillMaxWidth()
+                        .testTag("home_adhan_permission_card")
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.NotificationsActive, contentDescription = null, tint = DeepRed)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "আজানের সময় স্বয়ংক্রিয় নোটিফিকেশন ও আজান ধ্বনি চালু করুন",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "ঠিক সময়ে ৫ ওয়াক্ত আজান শোনার জন্য নিচের অনুমতিগুলো সক্রিয় করুন:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (!notifPermissionGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                Button(
+                                    onClick = { notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("নোটিফিকেশন অনুমতি", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                            if (!exactAlarmAllowed && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                OutlinedButton(
+                                    onClick = {
+                                        runCatching {
+                                            context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                                data = Uri.parse("package:${context.packageName}")
+                                            })
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Filled.Alarm, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("সঠিক অ্যালার্ম", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
                         }
                     }
                 }

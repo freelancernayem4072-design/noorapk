@@ -119,4 +119,12 @@ class ExampleUnitTest {
         assertEquals("আল-ফাতিহা", QuranCatalogMetadata.surahBnMap[1]?.first)
         assertEquals("আন-নাস", QuranCatalogMetadata.surahBnMap[114]?.first)
     }
+
+    @Test
+    fun `live clock formatter formats exact seconds accurately in bengali and english`() {
+        assertEquals("৫:০৪:০৯ ভোর", BengaliFormatter.formatLiveClock(5, 4, 9, AppLanguage.BENGALI))
+        assertEquals("১২:৩০:৪৫ দুপুর", BengaliFormatter.formatLiveClock(12, 30, 45, AppLanguage.BENGALI))
+        assertEquals("5:04:09 AM", BengaliFormatter.formatLiveClock(5, 4, 9, AppLanguage.ENGLISH))
+        assertEquals("12:30:45 PM", BengaliFormatter.formatLiveClock(12, 30, 45, AppLanguage.ENGLISH))
+    }
 }

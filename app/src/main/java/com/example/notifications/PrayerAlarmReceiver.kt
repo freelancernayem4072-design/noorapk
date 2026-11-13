@@ -20,8 +20,7 @@ class PrayerAlarmReceiver : BroadcastReceiver() {
         )
         val vibrate = intent.getBooleanExtra(PrayerNotificationScheduler.EXTRA_VIBRATE, true)
 
-        PrayerNotificationScheduler.ensureChannels(context)
-        PrayerNotificationScheduler.showNotification(
+        PrayerNotificationScheduler.triggerAdhanOrNotification(
             context = context,
             notificationId = 3000 + waqtId.hashCode(),
             waqtId = waqtId,

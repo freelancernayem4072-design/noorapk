@@ -76,6 +76,31 @@ object BengaliFormatter {
         }
     }
 
+    fun formatLiveClock(hour24: Int, minute: Int, second: Int, lang: AppLanguage = AppLanguage.BENGALI): String {
+        val hour12 = when {
+            hour24 == 0 -> 12
+            hour24 > 12 -> hour24 - 12
+            else -> hour24
+        }
+        val minStr = minute.toString().padStart(2, '0')
+        val secStr = second.toString().padStart(2, '0')
+        return if (lang == AppLanguage.BENGALI) {
+            val period = when {
+                hour24 in 0..3 -> "রাত"
+                hour24 in 4..5 -> "ভোর"
+                hour24 in 6..11 -> "সকাল"
+                hour24 in 12..15 -> "দুপুর"
+                hour24 in 16..17 -> "বিকাল"
+                hour24 in 18..19 -> "সন্ধ্যা"
+                else -> "রাত"
+            }
+            "${toBengaliDigits(hour12.toString())}:${toBengaliDigits(minStr)}:${toBengaliDigits(secStr)} $period"
+        } else {
+            val amPm = if (hour24 >= 12) "PM" else "AM"
+            String.format(Locale.US, "%d:%02d:%02d %s", hour12, minute, second, amPm)
+        }
+    }
+
     fun formatCountdown(totalSeconds: Long, lang: AppLanguage = AppLanguage.BENGALI): String {
         val safe = totalSeconds.coerceAtLeast(0L)
         val hours = safe / 3600

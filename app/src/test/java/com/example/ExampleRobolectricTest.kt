@@ -150,4 +150,38 @@ class ExampleRobolectricTest {
         composeRule.waitForIdle()
         assertTrue(finished)
     }
+
+    @Test
+    fun `clicking prayer in rakat list reveals detailed step by step rakats`() {
+        val fajr = com.example.data.content.NamazAndWuduData.rakatDetailsList.first()
+        composeRule.setContent {
+            com.example.ui.screens.InteractivePrayerRakatCard(detail = fajr)
+        }
+        composeRule.onNodeWithText("১. ফজরের নামাজ").assertIsDisplayed()
+        composeRule.onNodeWithText("মোট ৪ রাকাত").assertIsDisplayed()
+        composeRule.onNodeWithTag("rakat_card_fajr").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("ধারাবাহিক রাকাত বিন্যাস:").assertIsDisplayed()
+        composeRule.onNodeWithText("সুন্নতে মুয়াক্কাদা").assertIsDisplayed()
+        composeRule.onNodeWithText("ফরজ").assertIsDisplayed()
+    }
+
+    @Test
+    fun `adhan notification channels and real time prayer alarms schedule cleanly`() {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        com.example.notifications.PrayerNotificationScheduler.ensureChannels(context)
+        val liveChannel = nm.getNotificationChannel(
+            com.example.notifications.PrayerNotificationScheduler.CHANNEL_ADHAN_LIVE
+        )
+        assertNotNull(liveChannel)
+        assertEquals(android.app.NotificationManager.IMPORTANCE_HIGH, liveChannel.importance)
+
+        com.example.notifications.PrayerNotificationScheduler.scheduleUpcomingPrayers(
+            context,
+            com.example.data.local.UserPreferences()
+        )
+        val am = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+        val shadowAm = org.robolectric.Shadows.shadowOf(am)
+        assertTrue(shadowAm.scheduledAlarms.isNotEmpty() || shadowAm.nextScheduledAlarm != null)
+    }
 }

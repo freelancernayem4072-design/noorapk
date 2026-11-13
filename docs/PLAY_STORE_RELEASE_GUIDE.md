@@ -1,6 +1,6 @@
 # Google Play Store Release & Publishing Guide — NOOR LIFE (নূর লাইফ)
 
-> **Status Note:** This repository contains the verified Android codebase, release configuration, Play Store listing copy, Data Safety mapping, and build instructions. Final Play Console upload, privacy URL hosting, AdMob production ID linking, and Google Play review are completed by the publisher in Google Play Console.
+> **Status Note:** This repository contains the verified Android codebase, release configuration, Play Store listing copy, Data Safety mapping, and build instructions. NOOR LIFE is 100% ad-free. Final Play Console upload, privacy URL hosting, and Google Play review are completed by the publisher in Google Play Console.
 
 ---
 
@@ -38,11 +38,10 @@
 
 | Question / Category | Answer |
 |---|---|
-| Does your app collect or share any of the required user data types? | **Yes** (only if Google AdMob SDK collects Advertising ID / Device signals & Diagnostics per Google AdMob SDK disclosures; developer collects **zero** user account/PII data). |
+| Does your app collect or share any of the required user data types? | **No** (100% ad-free; developer collects **zero** user account/PII data and uses no advertising SDKs). |
 | Account creation required? | **No** (100% offline/local usage without login). |
-| Location (Approximate / Precise) | Collected only on-device if user grants optional GPS permission for prayer times & Qibla; **not** stored on developer servers, **not** shared for third-party marketing. |
+| Location (Approximate / Precise) | Used only on-device if user grants optional GPS permission for prayer times & Qibla; **not** stored on developer servers, **not** shared with third parties. |
 | App Activity / User Content (Bookmarks, Notes, Tasbih) | Stored **only locally** on user's device via Room/DataStore (never uploaded). |
-| Device or Other IDs | Used by **Google Mobile Ads (AdMob)** for ad serving and frequency capping (encrypted in transit). |
 
 ---
 
@@ -56,16 +55,7 @@
 
 ---
 
-## 4. Production AdMob Checklist (MANDATORY Before Store Release)
-
-Currently the build ships with Google's official **test AdMob IDs** so testing and development never violate AdMob policies:
-1. Open `app/src/main/res/values/strings.xml` and replace `admob_app_id` (`ca-app-pub-3940256099942544~3347511713`) with your real AdMob App ID.
-2. Open `app/src/main/java/com/example/ads/NoorAdManager.kt` and replace `PROD_BANNER_UNIT_ID` and `PROD_INTERSTITIAL_UNIT_ID` with your verified AdMob Unit IDs (in release builds `BuildConfig.DEBUG == false`, `AdConfig` automatically selects the production IDs).
-3. Verify AdMob **app-ads.txt** is published on your developer website if required by AdMob.
-
----
-
-## 5. Building Signed Release App Bundle (`.aab`)
+## 4. Building Signed Release App Bundle (`.aab`)
 
 Play Store requires a signed Android App Bundle (`.aab`). Provide your upload keystore credentials via environment variables (do **NOT** commit keystores or passwords into Git):
 
@@ -83,5 +73,5 @@ The signed AAB output will be generated at:
 1. Verify all 114 Surahs load offline and audio streams/downloads play in background.
 2. Verify all 5 bottom navigation tabs and secondary screens render properly in Light Mode, Dark Mode, Bengali, and English.
 3. Verify GPS permission grant/deny and Notification permission grant/deny flows on real Android 13/14/15 devices.
-4. Verify ads only show on non-worship screens and never appear inside Quran, Tafsir, Salah, Wudu, Dua, or Tasbih screens.
+4. Confirm zero ads or advertising IDs are present across all screens.
 5. Host `PRIVACY_POLICY.md` at a public HTTPS URL and paste that URL into Google Play Console -> App Content -> Privacy Policy.

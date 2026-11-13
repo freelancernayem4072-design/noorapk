@@ -74,8 +74,6 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.BuildConfig
 import com.example.R
-import com.example.ads.AdConfig
-import com.example.ads.NoorRespectfulBannerAd
 import com.example.data.content.QuranCatalogMetadata
 import com.example.data.local.NotificationSoundType
 import com.example.domain.prayer.AsrMadhhab
@@ -107,7 +105,6 @@ fun ProfileHubScreen(
     val notes by viewModel.personalNotes.collectAsStateWithLifecycle()
     val fastingDays by viewModel.fastingDays.collectAsStateWithLifecycle()
     val tasbihSessions by viewModel.tasbihSessions.collectAsStateWithLifecycle()
-    val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     var showNameDialog by remember { mutableStateOf(false) }
@@ -219,10 +216,6 @@ fun ProfileHubScreen(
                     }
                 }
             }
-        }
-
-        item {
-            NoorRespectfulBannerAd(isOnline = isOnline)
         }
     }
 
@@ -594,7 +587,7 @@ fun PrivacyAboutScreen(onBack: () -> Unit) {
                         "• অবস্থান (Location): কেবল আপনার অনুমতিক্রমেই সঠিক নামাজের সময় ও কিবলার দিক নির্ণয়ের জন্য ব্যবহৃত হয়; কোনো ব্যক্তিগত অবস্থান সার্ভারে সংরক্ষণ বা বিক্রি করা হয় না।\n" +
                             "• স্থানীয় ডেটা: আপনার বুকমার্ক, তাসবিহ গণনা, রোজার রেকর্ড, ব্যক্তিগত নোট এবং সেটিংস সম্পূর্ণভাবে আপনার নিজস্ব ডিভাইসেই (Room & DataStore) সংরক্ষিত থাকে।\n" +
                             "• মিডিয়া ও স্টোরেজ: কোনো বিস্তৃত স্টোরেজ পারমিশন চাওয়া হয় না; ওয়ালপেপার সংরক্ষণে আধুনিক অ্যান্ড্রয়েড MediaStore API ব্যবহৃত হয়।\n" +
-                            "• বিজ্ঞাপন (AdMob): Google Mobile Ads SDK কেবল নন-ইবাদত ইউটিলিটি স্ক্রিনে ব্যবহৃত হয়। কুরআন পাঠ, তাফসির, তিলাওয়াত, নামাজ শিক্ষা বা জিকিরের সময় কখনোই বিজ্ঞাপন দেখানো হয় না। (বর্তমান বিল্ডে টেস্ট মোড: ${if (AdConfig.isTestMode) "সক্রিয়" else "প্রোডাকশন"})।\n" +
+                            "• বিজ্ঞাপনমুক্ত অভিজ্ঞতা: নূর লাইফ একটি সম্পূর্ণ বিজ্ঞাপনমুক্ত (১০০% Ad-Free) ইসলামিক অ্যাপ। এতে কোনো AdMob বা বিজ্ঞাপন ট্র্যাকিং SDK নেই।\n" +
                             "• তথ্যসূত্র: কুরআনের আরবি ও বাংলা পাঠ AlQuran.cloud (মুহিউদ্দীন খান / উসমানি পাঠ), তাফসির ইবনে কাসীর (তাওহীদ পাবলিকেশন) ও সহীহ বুখারী (ফওয়াজ আহমেদ হাদিস ভান্ডার) থেকে সংগৃহীত।",
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -607,7 +600,7 @@ fun PrivacyAboutScreen(onBack: () -> Unit) {
                     Spacer(Modifier.height(6.dp))
                     Text(
                         "• টার্গেট API: Android 16 (API 36), ন্যূনতম API 24।\n" +
-                            "• AAB জেনারেশন কমান্ড: `gradle bundleRelease` (আপলোড কী-স্টোর ও প্রোডাকশন AdMob ID কনফিগার করার পর)।\n" +
+                            "• AAB জেনারেশন কমান্ড: `gradle bundleRelease` (আপলোড কী-স্টোর কনফিগার করার পর)।\n" +
                             "• দাবিত্যাগ: অ্যাপটি গুগল প্লে কনসোলে জমা দেওয়ার জন্য প্রস্তুত; প্রকৃত প্রকাশনা এবং অনুমোদন কেবল প্লে কনসোল পর্যালোচনা সম্পন্ন হওয়ার পরই কার্যকর হবে।",
                         style = MaterialTheme.typography.bodySmall
                     )

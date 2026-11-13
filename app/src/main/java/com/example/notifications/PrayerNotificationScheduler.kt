@@ -12,15 +12,16 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.example.MainActivity
 import com.example.R
 import com.example.data.local.NotificationSoundType
 import com.example.data.local.UserPreferences
-import com.example.domain.prayer.DailyPrayerSchedule
 import com.example.domain.prayer.PrayerTimeCalculator
 import com.example.domain.prayer.PrayerWaqt
 import com.example.localization.BengaliFormatter
 import java.util.Calendar
+import java.util.TimeZone
 
 object PrayerNotificationScheduler {
 
@@ -30,6 +31,7 @@ object PrayerNotificationScheduler {
     const val EXTRA_SOUND_TYPE = "extra_sound_type"
     const val EXTRA_VIBRATE = "extra_vibrate"
 
+    const val CHANNEL_ADHAN_LIVE = "noor_prayer_adhan_live_v1"
     private const val CHANNEL_ADHAN = "noor_prayer_adhan_v1"
     private const val CHANNEL_FAJR = "noor_prayer_fajr_v1"
     private const val CHANNEL_DEFAULT = "noor_prayer_default_v1"
@@ -46,6 +48,16 @@ object PrayerNotificationScheduler {
 
         val adhanUri = Uri.parse("${ContentResolver.SCHEME_ANDROID_RESOURCE}://${context.packageName}/${R.raw.adhan_chime}")
         val fajrUri = Uri.parse("${ContentResolver.SCHEME_ANDROID_RESOURCE}://${context.packageName}/${R.raw.fajr_chime}")
+
+        val chAdhanLive = NotificationChannel(
+            CHANNEL_ADHAN_LIVE,
+            "আজান প্লেয়ার অ্যালার্ট",
+            NotificationManager.IMPORTANCE_HIGH
+        ).apply {
+            description = "আজানের সময় সরাসরি আজান ধ্বনি ও নিয়ন্ত্রণ দেখায়"
+            setSound(null, null)
+            enableVibration(false)
+        }
 
         val chAdhan = NotificationChannel(
             CHANNEL_ADHAN,
@@ -86,7 +98,7 @@ object PrayerNotificationScheduler {
             enableVibration(false)
         }
 
-        nm.createNotificationChannels(listOf(chAdhan, chFajr, chDefault, chSilent))
+        nm.createNotificationChannels(listOf(chAdhanLive, chAdhan, chFajr, chDefault, chSilent))
     }
 
     fun channelFor(soundType: NotificationSoundType, waqtId: String): String = when (soundType) {
@@ -111,8 +123,9 @@ object PrayerNotificationScheduler {
         ensureChannels(context)
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val now = System.currentTimeMillis()
+        val cityTz = TimeZone.getTimeZone(prefs.city.timeZoneId)
 
-        val cal = Calendar.getInstance()
+        val cal = Calendar.getInstance(cityTz)
         val todaySchedule = PrayerTimeCalculator.calculateDailySchedule(
             cal.get(Calendar.YEAR),
             cal.get(Calendar.MONTH) + 1,
@@ -137,7 +150,7 @@ object PrayerNotificationScheduler {
             if (!prefs.isNotificationEnabled(waqt)) continue
             val todaySlot = todaySchedule.allSlots.first { it.waqt == waqt }
             val tomorrowSlot = tomorrowSchedule.allSlots.first { it.waqt == waqt }
-            val chosen = if (todaySlot.epochMillis > now + 5_000L) todaySlot else tomorrowSlot
+            val chosen = if (todaySlot.epochMillis > now + 2_000L) todaySlot else tomorrowSlot
             val timeLabel = BengaliFormatter.formatTime12Hour(chosen.hour24, chosen.minute, prefs.language)
             val body = if (waqt == PrayerWaqt.SUNRISE) {
                 "${todaySchedule.city.bnName}: সূর্যোদয় হয়েছে ($timeLabel)।"
@@ -157,7 +170,7 @@ object PrayerNotificationScheduler {
         }
 
         if (prefs.notifySehriIftar) {
-            val sehriTarget = if (todaySchedule.sehriEndMillis > now + 5_000L) {
+            val sehriTarget = if (todaySchedule.sehriEndMillis > now + 2_000L) {
                 todaySchedule.sehriEndMillis to BengaliFormatter.formatTime12Hour(todaySchedule.sehriHour24, todaySchedule.sehriMinute, prefs.language)
             } else {
                 tomorrowSchedule.sehriEndMillis to BengaliFormatter.formatTime12Hour(tomorrowSchedule.sehriHour24, tomorrowSchedule.sehriMinute, prefs.language)
@@ -219,9 +232,17 @@ object PrayerNotificationScheduler {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val showIntent = PendingIntent.getActivity(
+            context,
+            requestCode + 500,
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         runCatching {
             if (canScheduleExactAlarms(context)) {
-                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi)
+                am.setAlarmClock(AlarmManager.AlarmClockInfo(triggerAtMillis, showIntent), pi)
             } else {
                 am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi)
             }
@@ -230,14 +251,53 @@ object PrayerNotificationScheduler {
 
     fun showImmediateTestNotification(context: Context, prefs: UserPreferences) {
         ensureChannels(context)
-        showNotification(
+        triggerAdhanOrNotification(
             context = context,
             notificationId = 9999,
             waqtId = PrayerWaqt.FAJR.id,
-            title = "নূর লাইফ • পরীক্ষামূলক আজান নোটিফিকেশন",
-            body = "${prefs.city.bnName}: আপনার নামাজের নোটিফিকেশন সঠিকভাবে কাজ করছে।",
+            title = "নূর লাইফ • আজান ও নামাজ অ্যালার্ট",
+            body = "${prefs.city.bnName}: আজানের সময় হলে ঠিক এভাবেই নোটিফিকেশন ও আজান ধ্বনি বেজে উঠবে।",
             soundType = prefs.notificationSound,
             vibrate = prefs.vibrationEnabled
+        )
+    }
+
+    fun triggerAdhanOrNotification(
+        context: Context,
+        notificationId: Int,
+        waqtId: String,
+        title: String,
+        body: String,
+        soundType: NotificationSoundType,
+        vibrate: Boolean
+    ) {
+        ensureChannels(context)
+        val shouldPlayAdhanService = (soundType == NotificationSoundType.ADHAN_CHIME || soundType == NotificationSoundType.FAJR_CHIME) &&
+            waqtId != PrayerWaqt.SUNRISE.id
+
+        if (shouldPlayAdhanService) {
+            val svcIntent = Intent(context, AdhanPlaybackService::class.java).apply {
+                action = AdhanPlaybackService.ACTION_PLAY_ADHAN
+                putExtra(EXTRA_WAQT_ID, waqtId)
+                putExtra(EXTRA_TITLE, title)
+                putExtra(EXTRA_BODY, body)
+                putExtra(EXTRA_SOUND_TYPE, soundType.id)
+                putExtra(EXTRA_VIBRATE, vibrate)
+            }
+            val started = runCatching {
+                ContextCompat.startForegroundService(context, svcIntent)
+            }.isSuccess
+            if (started) return
+        }
+
+        showNotification(
+            context = context,
+            notificationId = notificationId,
+            waqtId = waqtId,
+            title = title,
+            body = body,
+            soundType = soundType,
+            vibrate = vibrate
         )
     }
 

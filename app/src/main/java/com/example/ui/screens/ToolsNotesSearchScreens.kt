@@ -63,7 +63,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.ads.NoorRespectfulBannerAd
 import com.example.localization.AppLanguage
 import com.example.localization.AppStrings
 import com.example.localization.BengaliFormatter
@@ -91,7 +90,6 @@ fun ToolsHubScreen(
     onNavigate: (NoorRoute) -> Unit
 ) {
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
-    val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
 
     val tools = remember {
         listOf(
@@ -186,11 +184,6 @@ fun ToolsHubScreen(
                 }
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
-        }
-
-        item {
-            Spacer(Modifier.height(6.dp))
-            NoorRespectfulBannerAd(isOnline = isOnline)
         }
     }
 }
